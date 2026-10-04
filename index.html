@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Occupied</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@87.5,400;87.5,500;87.5,650&display=swap">
+<style>
+  :root {
+    --ink: #111; --rule: #d9d9d9;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  /* the drawing sheet stays white in every theme */
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink: #111; --rule: #d9d9d9; } }
+  :root[data-theme="dark"] { --ink: #111; --rule: #d9d9d9; }
+  *, *::before, *::after { box-sizing: inherit; }
+  html, body { height: 100%; margin: 0; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body {
+    background: #fff; color: var(--ink); overflow: hidden;
+    font: 400 13px/1.3 "Archivo", "Helvetica Neue", Arial, sans-serif; font-stretch: 87.5%;
+  }
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+  button { font: inherit; color: var(--ink); background: #fff; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  #programs {
+    position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
+    display: flex; gap: 2px; background: #fff; max-width: calc(100% - 16px);
+  }
+  #programs button {
+    display: flex; align-items: center; gap: 7px; padding: 7px 10px 6px;
+    border: 0; border-bottom: 2px solid transparent; white-space: nowrap;
+  }
+  #programs i { width: 11px; height: 11px; background: var(--c); flex: none; }
+  #programs button[aria-pressed="true"] { border-bottom-color: var(--ink); font-weight: 650; }
+
+  #controls {
+    position: fixed; left: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    display: flex; gap: 6px;
+  }
+  #readout {
+    position: fixed; left: 14px; bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+    display: grid; gap: 1px; font-variant-numeric: tabular-nums; pointer-events: none;
+  }
+  #readout b { font-weight: 650; }
+  #controls { right: 14px; flex-wrap: wrap-reverse; pointer-events: none; }
+  #controls button { pointer-events: auto; }
+  #controls button { padding: 6px 10px; border: 1px solid var(--rule); min-width: 58px; }
+  #controls button:hover { border-color: var(--ink); }
+
+  /* ---- start screen: same sheet, same type, same black figures ---- */
+  #intro {
+    position: fixed; inset: 0; z-index: 10; background: #fff; overflow-y: auto;
+    padding: calc(28px + env(safe-area-inset-top, 0px)) 22px calc(28px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+  }
+  #intro[hidden] { display: none; }
+  #intro .sheet { margin: auto; width: 100%; max-width: 520px; font-size: 14px; line-height: 1.45; }
+  #intro h1 { margin: 0 0 30px; }
+  #intro h1 svg { display: block; width: 100%; height: auto; overflow: visible; }
+  #intro ol { margin: 0 0 30px; padding: 0 0 0 1.3em; }
+  #intro li { margin-bottom: 6px; padding-left: 4px; }
+  #ages { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: end; margin: 0 0 6px;
+          border-bottom: 1px solid var(--rule); }
+  #ages svg { display: block; margin: 0 auto -1px; }
+  #ageLabels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 0 0 30px; font-size: 12px; }
+  #ageLabels div { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  #ageLabels b { font-size: 13px; font-weight: 650; margin-bottom: 2px; }
+  #ageLabels span { display: flex; align-items: center; gap: 5px; }
+  #ageLabels i { width: 8px; height: 8px; background: var(--c); flex: none; }
+  #start { display: block; margin: 0 auto; padding: 9px 26px; border: 1px solid var(--ink); background: var(--ink); color: #fff; font-weight: 650; }
+
+  @media (max-width: 520px) {
+    #controls button { padding: 6px 7px; min-width: 0; }
+    #programs { font-size: 12px; }
+    #programs button { padding: 7px 6px 6px; gap: 5px; }
+  }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<nav id="programs" aria-label="Program to place"></nav>
+<section id="intro" aria-labelledby="introTitle">
+  <div class="sheet">
+    <h1 id="introTitle" aria-label="Occupied"></h1>
+    <ol>
+      <li>Pick a program at the top and click a cell. A cube marks it.</li>
+      <li>People walk to it. The cube fills as they use it.</li>
+      <li>When it is full it becomes a stair, wall, platform or bridge. The rules choose which, not you.</li>
+    </ol>
+    <div id="ages"></div>
+    <div id="ageLabels"></div>
+    <button id="start">Start</button>
+  </div>
+</section>
+<div id="readout"><div>Population <b id="pop">0</b></div></div>
+<div id="controls">
+  <button id="play">Pause</button>
+  <button id="reset">Reset</button>
+  <button id="camReset">Reset camera</button>
+  <button id="about">How it works</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+/* =====================================================================
+   SIMULATION PARAMETERS  — everything worth tuning lives here
+   ===================================================================== */
+const PARAMS = {
+  GRID: 5,                 // cells per side
+  LEVEL_H: 0.9,             // storey height (cell = 1 unit)
+  MAX_LEVELS: 24,            // maximum building height in storeys
+  SEED: 1207,
+
+  AGENT_COUNT: 50,            // population before any program is placed
+  AGENTS_PER_PROGRAM: 5,      // newcomers walking in each time a program turns into architecture
+  AGENTS_PER_LEVEL: 0,        // extra newcomers per storey of height: building up pays more
+  SIM_SPEED: 1.5,
+
+  // Age groups: figure scale, walking speed (cells/s), share of population
+  AGE_GROUPS: [
+    { label: "0–20",   scale: 0.55, speed: 1.25, share: 0.22 },
+    { label: "21–40",  scale: 0.74, speed: 1.40, share: 0.30 },
+    { label: "41–60",  scale: 0.90, speed: 1.15, share: 0.28 },
+    { label: "61–80+", scale: 1.06, speed: 0.80, share: 0.20 },
+  ],
+
+  PROGRAMS: [
+    { id: "res", name: "Residential",   color: 0xe5533c },
+    { id: "com", name: "Commercial",    color: 0x2c66d8 },
+    { id: "ins", name: "Institutional", color: 0x23a06b },
+    { id: "ind", name: "Industrial",    color: 0xf0a51a },
+  ],
+
+  // ATTRACTION[ageGroup][program] — rows: age groups, columns: Res, Com, Ins, Ind
+  ATTRACTION: [
+    [0.25, 0.50, 0.50, 0.08],   // 0–20
+    [0.50, 0.50, 0.38, 0.25],   // 21–40
+    [0.50, 0.28, 0.50, 0.25],   // 41–60
+    [0.55, 0.28, 0.50, 0.08],   // 61–80+
+  ],
+  ARCH_ATTRACTION_FACTOR: 0.1,  // a built program keeps drawing people, but far less than a new one
+  ELEVATED_BOOST: 0.5,          // attraction × (1 + this × storey): the higher the program, the stronger the pull
+  DISTANCE_FALLOFF: 0.06,       // attraction / (1 + falloff * path length)
+  WANDER_CHOICE_WEIGHT: 0.6,    // chance weight of simply strolling
+  WANDERER_SHARE: 0.3,          // share of agents who ignore program and just walk
+  WANDER_TIME: [3, 9],          // seconds per stroll
+  DWELL_TIME: [2, 5],         // seconds spent at a program
+  TRAVEL_PATIENCE: 40,          // seconds before giving up on a target
+
+  // Steering weights (pedestrian, not flock)
+  W_FLOW: 1.0, W_SEPARATION: 1.1, W_ALIGN: 0.10, W_COHESION: 0.03, W_WANDER: 0.45,
+  SEPARATION_RADIUS: 0.32, NEIGHBOR_RADIUS: 1.1,
+
+  // Activity → hotspot stages 1..4 (4 = architecture)
+  STAGE_THRESHOLDS: [2, 20, 55, 100],
+  RATE_INSIDE: 0.38,        // per agent per second standing in the cell
+  RATE_NEAR: 0.08,          // per agent per second within NEAR_RADIUS
+  NEAR_RADIUS: 1.25,
+  ENTER_BONUS: 0.5,         // per agent entering the cell
+  DENSITY_COUNT: 6, RATE_DENSITY: 0.5,   // bonus when a crowd forms
+  FADE_RATE: 0.35,          // activity lost per second (hotspots cool down)
+
+  // The four standard forms and their relative odds. Each fills exactly one cell.
+  FORM_WEIGHTS: { stair: 2.2, bridge: 1.6, platform: 1.4, wall: 0.4 },
+  // How context bends those odds
+  CONNECT_BOOST: 6,         // stair to a stranded roof, on a storey with no way up yet (this one is certain)
+  FIRST_WAY_UP: 2.5,        // stair with no roof at its head yet, on a storey with no way up
+  SPARE_STAIR: 0.15,        // any further stair once the storey has a way up
+  LANDING_BOOST: 5,         // platform or bridge at the head of a waiting stair
+  DECK_BOOST: 2.5,          // platform or bridge beside an existing roof: decks join into walkways
+  UPSTAIRS_WALL: 0.2,       // walls end a stack, so they are rare above ground
+  WALL_MAX_CROSSING: 0.15,  // a wall never closes a side carrying more than this share of crossings
+  SAME_TURN_SAME_FORM: 0.04, // odds × this when a neighbour is the same form facing the same way
+  SAME_TURN_OTHER_FORM: 0.5, // odds × this when a different neighbouring form faces the same way
+  STAIR_STEPS: 16, STAIR_WIDTH: 1, RAMP_WIDTH: 1,   // small steps, full cell width
+
+  THICK: 0.07,                  // one thickness for slabs, walls, columns
+};
+
+/* =====================================================================
+   SHORTHANDS, RNG
+   ===================================================================== */
+const N = PARAMS.GRID, H = PARAMS.LEVEL_H, MAXL = PARAMS.MAX_LEVELS, T = PARAMS.THICK;
+const LEVELS = MAXL + 1;                    // level MAXL exists only as a roof
+const DIRS = [[1,0],[0,1],[-1,0],[0,-1]];   // +x, +y(z), -x, -y
+const opp = d => (d + 2) % 4;
+const idx = (x, y, l) => (l * N + y) * N + x;
+const inGrid = (x, y) => x >= 0 && y >= 0 && x < N && y < N;
+
+let rngState = PARAMS.SEED;
+function rnd() {                            // mulberry32
+  rngState |= 0; rngState = rngState + 0x6D2B79F5 | 0;
+  let t = Math.imul(rngState ^ rngState >>> 15, 1 | rngState);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+  return ((t ^ t >>> 14) >>> 0) / 4294967296;
+}
+const rrange = (a, b) => a + rnd() * (b - a);
+
+/* =====================================================================
+   SCENE / RENDERER
+   ===================================================================== */
+const stage = document.getElementById("stage");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setClearColor(0xffffff, 1);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.add(new THREE.HemisphereLight(0xffffff, 0xdcdcdc, 0.78));
+const sun = new THREE.DirectionalLight(0xffffff, 0.5);
+sun.position.set(-14, 44, 18);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 110 });
+sun.shadow.bias = -0.0008;
+scene.add(sun);
+
+/* =====================================================================
+   ORTHOGRAPHIC CAMERA (isometric, orbit + zoom)
+   ===================================================================== */
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
+const CAM_HOME = { az: Math.PI / 4, el: Math.atan(1 / Math.SQRT2), zoom: 1 };
+const cam = Object.assign({}, CAM_HOME);
+const camTarget = new THREE.Vector3(0, 3.0, 0);
+let viewTop = 0;                               // height the view is framed for; follows the tallest storey
+function updateCamera() {
+  const w = stage.clientWidth || 1, h = stage.clientHeight || 1, aspect = w / h;
+  const halfH = Math.max(4.4 + viewTop * 0.42, 4.2 / aspect) / cam.zoom;   // frame the grid, then the tower as it climbs
+  camTarget.y = 0.7 + viewTop * 0.5;
+  camera.left = -halfH * aspect; camera.right = halfH * aspect;
+  camera.top = halfH; camera.bottom = -halfH;
+  const r = 60, ce = Math.cos(cam.el);
+  camera.position.set(camTarget.x + r * ce * Math.sin(cam.az), camTarget.y + r * Math.sin(cam.el), camTarget.z + r * ce * Math.cos(cam.az));
+  camera.lookAt(camTarget);
+  camera.updateProjectionMatrix();
+}
+function resize() { renderer.setSize(stage.clientWidth, stage.clientHeight, false); updateCamera(); }
+window.addEventListener("resize", resize);
+
+/* =====================================================================
+   GRID (ground plane, lines, shadow catcher, footfall trace)
+   ===================================================================== */
+// world position of a cell centre
+const wx = x => x - N / 2 + 0.5, wz = y => y - N / 2 + 0.5;
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(N, N), new THREE.MeshBasicMaterial({ color: 0xf4f4f4 }));
+ground.rotation.x = -Math.PI / 2; ground.position.y = -0.002; scene.add(ground);
+
+const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(N, N), new THREE.ShadowMaterial({ opacity: 0.11 }));
+shadowCatcher.rotation.x = -Math.PI / 2; shadowCatcher.position.y = 0.001; shadowCatcher.receiveShadow = true; scene.add(shadowCatcher);
+
+const gridLines = (() => {
+  const pts = [];
+  for (let i = 0; i <= N; i++) {
+    const p = i - N / 2;
+    pts.push(p, 0.003, -N / 2, p, 0.003, N / 2, -N / 2, 0.003, p, N / 2, 0.003, p);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+  return new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xd4d4d4 }));
+})();
+scene.add(gridLines);
+
+/* =====================================================================
+   COLORS / MATERIALS
+   ===================================================================== */
+const MATS = PARAMS.PROGRAMS.map(p => {
+  const c = new THREE.Color(p.color);
+  return {
+    solid: new THREE.MeshLambertMaterial({ color: c }),
+    solid2: new THREE.MeshLambertMaterial({ color: c, side: THREE.DoubleSide }),   // pitched roofs
+    edge: new THREE.LineBasicMaterial({ color: c.clone().multiplyScalar(0.55) }),
+    wire: new THREE.LineBasicMaterial({ color: c }),
+    marker: new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.22, depthWrite: false }),
+  };
+});
+
+/* =====================================================================
+   GRID LAYERS — one slot per (x, y, level); a slot holds one program forever
+   ===================================================================== */
+let slotAt = new Array(N * N * LEVELS).fill(null);
+let slots = [];        // every occupied slot (programs + access connectors)
+let programs = [];     // slots the user placed
+let reach = new Uint8Array(N * N * LEVELS);   // reachable from the ground on foot
+
+const archAt = (x, y, l) => { const s = slotAt[idx(x, y, l)]; return s ? s.arch : null; };
+function hasFloor(x, y, l) {
+  if (l === 0) return true;
+  const a = archAt(x, y, l - 1);
+  return !!(a && a.top);
+}
+function walkable(x, y, l) {
+  if (!inGrid(x, y) || l < 0 || l >= LEVELS) return false;
+  const a = archAt(x, y, l);
+  if (a && a.connector) return true;             // a flight is its own floor, even stacked over the flight below
+  return hasFloor(x, y, l) && !(a && a.solid);
+}
+// the open shaft above a stair: the next flight can go here, parallel to the one below
+function shaftOpen(x, y, l) {
+  if (l < 1 || hasFloor(x, y, l)) return false;
+  const b = archAt(x, y, l - 1);
+  return !!(b && b.connector) && hasFloor(x - DIRS[b.dir][0], y - DIRS[b.dir][1], l);   // needs a floor at its foot
+}
+const slotFree = (x, y, l) => inGrid(x, y) && l < MAXL && !slotAt[idx(x, y, l)] && (hasFloor(x, y, l) || shaftOpen(x, y, l));
+
+/* =====================================================================
+   AGENT NAVIGATION — walkable graph, vertical accessibility
+   Walls block cell edges. Stairs/ramps join level l (low side) to l+1 (high side).
+   step() is symmetric, so one BFS serves both reachability and flow fields.
+   ===================================================================== */
+function step(x, y, l, d) {
+  const nx = x + DIRS[d][0], ny = y + DIRS[d][1];
+  if (!inGrid(nx, ny)) return -1;
+  const a = archAt(x, y, l);
+  if (a && a.connector) {
+    if (d === a.dir) {                               // leave by the top
+      if (!walkable(nx, ny, l + 1)) return -1;
+      const b = archAt(nx, ny, l + 1);
+      if (b && (b.connector || (b.walls & (1 << opp(d))))) return -1;
+      return idx(nx, ny, l + 1);
+    }
+    if (d === opp(a.dir)) {                          // leave by the foot
+      if (!walkable(nx, ny, l)) return -1;
+      const b = archAt(nx, ny, l);
+      if (b && (b.connector || (b.walls & (1 << opp(d))))) return -1;
+      return idx(nx, ny, l);
+    }
+    return -1;                                       // sides are closed
+  }
+  if (a && (a.walls & (1 << d))) return -1;
+  if (walkable(nx, ny, l)) {
+    const b = archAt(nx, ny, l);
+    if (b) {
+      if (b.connector) return b.dir === d ? idx(nx, ny, l) : -1;   // enter at the foot only
+      if (b.walls & (1 << opp(d))) return -1;
+    }
+    return idx(nx, ny, l);
+  }
+  if (l > 0) {                                       // step down onto a stair head
+    const b = archAt(nx, ny, l - 1);
+    if (b && b.connector && b.dir === opp(d)) return idx(nx, ny, l - 1);
+  }
+  return -1;
+}
+const NN = N * N;
+function bfs(sources, out) {
+  out.fill(-1);
+  const q = new Int32Array(out.length); let qh = 0, qt = 0;
+  for (const s of sources) if (out[s] < 0) { out[s] = 0; q[qt++] = s; }
+  while (qh < qt) {
+    const i = q[qh++], x = i % N, y = ((i / N) | 0) % N, l = (i / NN) | 0;
+    for (let d = 0; d < 4; d++) {
+      const j = step(x, y, l, d);
+      if (j >= 0 && out[j] < 0) { out[j] = out[i] + 1; q[qt++] = j; }
+    }
+  }
+}
+function computeField(s) {
+  // distance (in cells walked) from everywhere to this program
+  const src = [];
+  if (walkable(s.x, s.y, s.l)) src.push(idx(s.x, s.y, s.l));
+  else for (let d = 0; d < 4; d++) {                 // solid form: gather around it
+    const nx = s.x + DIRS[d][0], ny = s.y + DIRS[d][1];
+    if (walkable(nx, ny, s.l)) { const b = archAt(nx, ny, s.l); if (!(b && b.connector)) src.push(idx(nx, ny, s.l)); }
+  }
+  bfs(src, s.field);
+}
+const tmpReach = new Int16Array(N * N * LEVELS);
+function recomputeNav() {
+  const src = [];
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (walkable(x, y, 0)) src.push(idx(x, y, 0));
+  bfs(src, tmpReach);
+  for (let i = 0; i < reach.length; i++) reach[i] = tmpReach[i] >= 0 ? 1 : 0;
+  for (const s of programs) computeField(s);
+  rebuildSurfaces();
+}
+
+/* =====================================================================
+   ARCHITECTURE GENERATION — one vocabulary, colour carries the program
+   Local frame: cell centre at origin, floor at y=0, roof surface at y=H.
+   Oriented forms are authored facing +x and rotated in quarter turns.
+   ===================================================================== */
+const geoCache = new Map();
+function boxGeo(w, h, d) {
+  const k = w.toFixed(3) + "|" + h.toFixed(3) + "|" + d.toFixed(3);
+  let g = geoCache.get(k);
+  if (!g) { const b = new THREE.BoxGeometry(w, h, d); g = { b, e: new THREE.EdgesGeometry(b) }; geoCache.set(k, g); }
+  return g;
+}
+function B(g, m, w, h, d, x, y, z, rotZ) {
+  const geo = boxGeo(w, h, d);
+  const mesh = new THREE.Mesh(geo.b, m.solid);
+  mesh.position.set(x, y, z); if (rotZ) mesh.rotation.z = rotZ;
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  g.add(mesh);
+}
+const slab = (g, m, y = H) => B(g, m, 1, T, 1, 0, y - T / 2, 0);
+const column = (g, m, x, z, h = H - T) => B(g, m, T, h, T, x, h / 2, z);
+function wallOn(g, m, side, h = H - T) {
+  const o = 0.5 - T / 2;
+  if (side === 0) B(g, m, T, h, 1, o, h / 2, 0);
+  if (side === 2) B(g, m, T, h, 1, -o, h / 2, 0);
+  if (side === 1) B(g, m, 1, h, T, 0, h / 2, o);
+  if (side === 3) B(g, m, 1, h, T, 0, h / 2, -o);
+}
+const FORMS = {
+  // open deck on four corner posts; walk underneath, build on top
+  platform: { top: true, build(g, m) {
+                const c = 0.5 - T / 2;
+                for (const sx of [-c, c]) for (const sz of [-c, c]) column(g, m, sx, sz);
+                slab(g, m); } },
+  // deck on two piers, turned to span the way people walk; open underneath, build on top
+  bridge:   { top: true, axis: true,
+              build(g, m) { for (const z of [-0.4, 0.4]) B(g, m, 0.3, H - T, 0.2, 0, (H - T) / 2, z); slab(g, m); } },
+  // single plane on one edge; redirects movement
+  wall:     { walls: [0], build(g, m) { wallOn(g, m, 0, H); } },
+  // full-width flight rising toward local +x, level l up to l+1
+  stair:    { connector: true, half: PARAMS.STAIR_WIDTH / 2, build(g, m) {
+                const n = PARAMS.STAIR_STEPS, r = H / n;
+                for (let i = 0; i < n; i++) { const hh = Math.min(2 * r, (i + 1) * r);
+                  B(g, m, 1 / n, hh, PARAMS.STAIR_WIDTH, -0.5 + (i + 0.5) / n, (i + 1) * r - hh / 2, 0); } } },
+};
+
+const rising = [];   // forms currently animating upward
+function installArch(s, formName, rot) {
+  const f = FORMS[formName];
+  let walls = 0, portals = 0;
+  for (const w of (f.walls || [])) walls |= 1 << ((w + rot) % 4);
+  for (const w of (f.portals || [])) portals |= 1 << ((w + rot) % 4);
+  s.arch = { form: formName, portals, half: f.half || 0.5, top: !!f.top && s.l + 1 <= MAXL, solid: !!f.solid, connector: !!f.connector, dir: rot, walls };
+  s.stage = 4;
+  const g = new THREE.Group();
+  f.build(g, MATS[s.prog]);
+  g.position.set(wx(s.x), s.l * H, wz(s.y));
+  g.rotation.y = -rot * Math.PI / 2;        // local +x → DIRS[rot]
+  g.scale.y = 0.02;
+  scene.add(g); s.archGroup = g; rising.push(g);
+  if (s.hot) { scene.remove(s.hot); s.hot = null; }
+}
+/* ---- context rules: a new form must make sense next to what is already there ----
+   sideState: what lies beyond side d of cell (x, y, l)
+     "open"    a walkable neighbour, a stair foot we can enter, or a stair head arriving
+     "void"    the grid edge or the edge of a roof
+     "blocked" a wall, a solid form, or the flank of a stair                              */
+function sideState(x, y, l, d) {
+  const nx = x + DIRS[d][0], ny = y + DIRS[d][1];
+  if (!inGrid(nx, ny)) return "void";
+  if (hasFloor(nx, ny, l)) {
+    const b = archAt(nx, ny, l);
+    if (!b) return "open";
+    if (b.solid) return "blocked";
+    if (b.connector) return b.dir === d ? "open" : "blocked";
+    return (b.walls & (1 << opp(d))) ? "blocked" : "open";
+  }
+  const below = l > 0 ? archAt(nx, ny, l - 1) : null;
+  return below && below.connector && below.dir === opp(d) ? "open" : "void";
+}
+// does the neighbour on side d rely on that side staying open?
+// (a tunnel mouth or doorway facing us, a stair foot, or a stair arriving from below)
+function neighbourNeedsSide(x, y, l, d) {
+  const nx = x + DIRS[d][0], ny = y + DIRS[d][1];
+  if (!inGrid(nx, ny)) return false;
+  const b = archAt(nx, ny, l);
+  if (b && (b.portals & (1 << opp(d)))) return true;
+  if (b && b.connector && b.dir === d) return true;
+  const below = l > 0 ? archAt(nx, ny, l - 1) : null;
+  return !!(below && below.connector && below.dir === opp(d));
+}
+// would anything that fills this cell (solid form, stair, ramp) sit in someone's way?
+function cellIsNeeded(x, y, l) {
+  for (let d = 0; d < 4; d++) if (neighbourNeedsSide(x, y, l, d)) return true;
+  return false;
+}
+function formFits(s, name, rot) {
+  const f = FORMS[name];
+  if (f.solid || f.connector) return !cellIsNeeded(s.x, s.y, s.l);
+  for (const w of (f.walls || [])) if (neighbourNeedsSide(s.x, s.y, s.l, (w + rot) % 4)) return false;
+  let open = 0;
+  for (const w of (f.portals || [])) {
+    const st = sideState(s.x, s.y, s.l, (w + rot) % 4);
+    if (st === "blocked") return false;           // never open onto a wall or a stair flank
+    if (st === "open") open++;
+  }
+  return !(f.needOpen && open === 0);             // a tunnel or room must lead somewhere
+}
+
+// valid directions for a connector sitting in (x, y, l)
+function connectorDirs(x, y, l) {
+  const good = [], ok = [];
+  for (let d = 0; d < 4; d++) {
+    const lx = x - DIRS[d][0], ly = y - DIRS[d][1], hx = x + DIRS[d][0], hy = y + DIRS[d][1];
+    if (!walkable(lx, ly, l)) continue;
+    const b = archAt(lx, ly, l);
+    if (b && (b.connector || (b.walls & (1 << d)))) continue;
+    if (!inGrid(hx, hy)) continue;
+    if (l + 1 <= MAXL && walkable(hx, hy, l + 1)) good.push(d);          // a roof to arrive on
+    else if (hasFloor(hx, hy, l) && !archAt(hx, hy, l)) ok.push(d);       // room for one to appear later
+  }
+  return { good, ok };
+}
+// Does a neighbouring stair depend on this cell having a roof?
+//   - it is the head of a built flight (the flight needs somewhere to arrive)
+//   - it is the foot of a built flight (the next flight up will need a floor at its foot)
+//   - it is the head of the open shaft above a flight (the next flight will land here)
+function isLanding(x, y, l) {
+  for (let d = 0; d < 4; d++) {
+    const nx = x + DIRS[d][0], ny = y + DIRS[d][1];
+    if (!inGrid(nx, ny)) continue;
+    const b = archAt(nx, ny, l);
+    if (b && b.connector && (b.dir === opp(d) || b.dir === d)) return true;
+    const below = l > 0 ? archAt(nx, ny, l - 1) : null;
+    if (!b && below && below.connector && below.dir === opp(d)) return true;
+  }
+  return false;
+}
+/* One hotspot → one form in its own cell. The draw is random, but three things
+   are settled first so the field can always keep climbing:
+   1. a waiting stair gets a platform or bridge at its head;
+   2. a storey with no way up gets its stair before anything else;
+   3. no form may cut off a place people can currently reach.                       */
+const _reachTest = new Int16Array(N * N * LEVELS);
+function cutsOff(s, name, r) {
+  const f = FORMS[name];
+  if (!f.walls && !f.connector) return false;
+  let walls = 0; for (const w of (f.walls || [])) walls |= 1 << ((w + r) % 4);
+  s.arch = { form: name, top: false, solid: false, connector: !!f.connector, dir: r, walls, portals: 0 };   // try it on
+  const src = [];
+  for (let i = 0; i < N * N; i++) if (walkable(i % N, (i / N) | 0, 0)) src.push(i);
+  bfs(src, _reachTest);
+  const after = islands(s.l);
+  s.arch = null;
+  const self = idx(s.x, s.y, s.l);
+  for (let i = 0; i < reach.length; i++) if (reach[i] && _reachTest[i] < 0 && i !== self) return true;
+  return after > islands(s.l);                   // and never split a storey's floor into separate islands
+}
+// how many separate pieces is the walkable floor of storey l in?
+const _seen = new Uint8Array(N * N);
+function islands(l) {
+  _seen.fill(0);
+  let count = 0;
+  for (let i = 0; i < N * N; i++) {
+    if (_seen[i] || !walkable(i % N, (i / N) | 0, l)) continue;
+    count++;
+    const stack = [i]; _seen[i] = 1;
+    while (stack.length) {
+      const c = stack.pop(), x = c % N, y = (c / N) | 0;
+      for (let d = 0; d < 4; d++) {
+        const j = step(x, y, l, d);
+        if (j >= 0 && ((j / NN) | 0) === l && !_seen[j % NN]) { _seen[j % NN] = 1; stack.push(j % NN); }
+      }
+    }
+  }
+  return count;
+}
+// a program in the shaft above a stair can only become the next flight; can it, yet?
+function nextFlightFits(s) {
+  const d = archAt(s.x, s.y, s.l - 1).dir, cd = connectorDirs(s.x, s.y, s.l);
+  if (!reach[idx(s.x - DIRS[d][0], s.y - DIRS[d][1], s.l)]) return false;      // people must be able to get to its foot
+  return cd.good.includes(d) || cd.ok.includes(d);
+}
+function generateArchitecture(s) {
+  if (!hasFloor(s.x, s.y, s.l)) {                // stair shaft: the flight below continues upward
+    installArch(s, "stair", archAt(s.x, s.y, s.l - 1).dir);
+    recomputeNav();
+    setAgentCount(agents.length + PARAMS.AGENTS_PER_PROGRAM + PARAMS.AGENTS_PER_LEVEL * s.l);
+    return;
+  }
+  const P = PARAMS, X = s.cross, flow = X[0] + X[1] + X[2] + X[3] + 1e-6;
+  const cd = connectorDirs(s.x, s.y, s.l);
+  const landing = isLanding(s.x, s.y, s.l);
+  const nb = d => { const nx = s.x + DIRS[d][0], ny = s.y + DIRS[d][1]; return inGrid(nx, ny) ? [nx, ny] : null; };
+  let roofBeside = false;
+  for (let d = 0; d < 4; d++) { const n = nb(d); if (n && hasFloor(n[0], n[1], s.l + 1)) roofBeside = true; }
+  // does this storey still need its way up? (nobody can reach the next one, and no stair is waiting)
+  let needWayUp = !!reach[idx(s.x, s.y, s.l)] && s.l + 1 < LEVELS;
+  for (let i = 0; i < N * N && needWayUp; i++) {
+    if (reach[(s.l + 1) * N * N + i]) needWayUp = false;
+    const a = archAt(i % N, (i / N) | 0, s.l); if (a && a.connector && reach[s.l * N * N + i]) needWayUp = false;
+  }
+
+  let cands = [];
+  for (const name in P.FORM_WEIGHTS) {
+    const f = FORMS[name], list = [];
+    for (let r = 0; r < 4; r++) {
+      if (f.connector && !cd.good.includes(r) && !cd.ok.includes(r)) continue;
+      if (!formFits(s, name, r) || cutsOff(s, name, r)) continue;
+      let k = 1, forced = false;
+      if (f.connector) {
+        const n = nb(r), toRoof = cd.good.includes(r);
+        if (needWayUp) { forced = toRoof; k = toRoof ? P.CONNECT_BOOST : P.FIRST_WAY_UP; }
+        else k = P.SPARE_STAIR * (toRoof && !reach[idx(n[0], n[1], s.l + 1)] ? 3 : 1);   // one way up is enough; more are rare
+        k *= 1 + 2 * X[opp(r)] / flow;                                       // foot faces the arrivals
+        k *= 1 - 0.7 * (X[r] + X[(r + 1) % 4] + X[(r + 3) % 4]) / flow;      // and does not sever a busy path
+      } else if (f.axis) {
+        const share = (X[r] + X[(r + 2) % 4]) / flow;                        // passage runs the way people walk
+        k = 0.2 + 4 * share * share;
+      } else if (f.walls) {
+        if (X[r] / flow > P.WALL_MAX_CROSSING) continue;                     // never wall off a route people use
+        k = Math.pow(1 - X[r] / flow, 4) * 2 * (s.l > 0 ? P.UPSTAIRS_WALL : 1);
+      }
+      if (f.top) k *= (landing ? P.LANDING_BOOST : 1) * (roofBeside ? P.DECK_BOOST : 1);
+      // neighbours should not line up: a form next door facing the same way is strongly avoided
+      if (f.walls || f.connector || f.axis) for (let d = 0; d < 4; d++) {
+        const n = nb(d), b = n && archAt(n[0], n[1], s.l);
+        if (!b || !(b.walls || b.connector || FORMS[b.form].axis)) continue;
+        const same = f.axis && FORMS[b.form].axis ? b.dir % 2 === r % 2 : b.dir === r;
+        if (same) k *= b.form === name ? P.SAME_TURN_SAME_FORM : P.SAME_TURN_OTHER_FORM;
+      }
+      list.push({ name, r, k, top: !!f.top, forced });
+    }
+    for (const c of list) { c.w = P.FORM_WEIGHTS[name] * c.k / list.length; cands.push(c); }
+  }
+  if (landing && cands.some(c => c.top)) cands = cands.filter(c => c.top);
+  else if (cands.some(c => c.forced)) cands = cands.filter(c => c.forced);
+  let total = 0; for (const c of cands) total += c.w;
+  let r = rnd() * total, pick = cands[0] || { name: "platform", r: 0 };
+  for (const c of cands) { if ((r -= c.w) <= 0) { pick = c; break; } }
+  installArch(s, pick.name, pick.r);
+  recomputeNav();
+  // a completed program brings more people, so the next hotspot matures faster
+  setAgentCount(agents.length + PARAMS.AGENTS_PER_PROGRAM + PARAMS.AGENTS_PER_LEVEL * s.l);
+}
+
+/* =====================================================================
+   PROGRAM PLACEMENT + HOTSPOT VISUALS
+   ===================================================================== */
+const unitBox = new THREE.BoxGeometry(0.92, 1, 0.92); unitBox.translate(0, 0.5, 0);
+const unitEdges = new THREE.EdgesGeometry(unitBox);
+const markerGeo = new THREE.PlaneGeometry(0.9, 0.9); markerGeo.rotateX(-Math.PI / 2);
+const markerEdge = new THREE.EdgesGeometry(markerGeo);
+const show = { grid: true, agents: true, wires: true, activity: true, markers: true };
+
+function placeProgram(x, y, l, prog) {
+  if (!slotFree(x, y, l)) return false;
+  const s = { x, y, l, prog, aux: false, activity: 0, stage: 0, arch: null, entries: 0, cross: [0, 0, 0, 0],
+              field: new Int16Array(N * N * LEVELS) };
+  slotAt[idx(x, y, l)] = s; slots.push(s); programs.push(s);
+  // stage 0: flat tint + outline
+  const mk = new THREE.Group();
+  mk.add(new THREE.Mesh(markerGeo, MATS[prog].marker));
+  mk.add(new THREE.LineSegments(markerEdge, MATS[prog].wire));
+  mk.position.set(wx(x), l * H + 0.012, wz(y));
+  scene.add(mk); s.marker = mk;
+  // stages 1–3: wireframe, then a filling volume
+  const hot = new THREE.Group();
+  s.wireMat = new THREE.LineBasicMaterial({ color: PARAMS.PROGRAMS[prog].color, transparent: true, opacity: 0.25 });
+  s.wire = new THREE.LineSegments(unitEdges, s.wireMat);
+  s.volMat = new THREE.MeshBasicMaterial({ color: PARAMS.PROGRAMS[prog].color, transparent: true, opacity: 0, depthWrite: false });
+  s.vol = new THREE.Mesh(unitBox, s.volMat);
+  hot.add(s.wire, s.vol);
+  hot.position.set(wx(x), l * H + 0.01, wz(y));
+  hot.scale.y = H;                         // a full cube from the moment of placement
+  scene.add(hot); s.hot = hot;
+  computeField(s);
+  rebuildSurfaces();
+  return true;
+}
+function updateHotspotVisual(s) {
+  s.marker.visible = show.markers;
+  if (!s.hot) return;
+  // the cube never changes size; activity only makes it more opaque
+  const frac = Math.min(1, s.activity / PARAMS.STAGE_THRESHOLDS[3]);
+  s.wire.visible = show.wires;
+  s.wireMat.opacity = 0.25 + 0.75 * frac;
+  s.vol.visible = show.activity && frac > 0;
+  s.volMat.opacity = 0.8 * frac;
+}
+
+// elevated surfaces: pick targets + outline showing where program may go next
+let surfaceGroup = new THREE.Group(); scene.add(surfaceGroup);
+let pickables = [];
+const pickGeo = new THREE.PlaneGeometry(1, 1); pickGeo.rotateX(-Math.PI / 2);
+const pickMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+const availGeo = (() => {
+  // inset outline with corner ticks: "this roof is open for program"
+  const a = 0.36, t = 0.12, p = [];
+  for (const [sx, sz] of [[1,1],[1,-1],[-1,1],[-1,-1]])
+    p.push(sx * a, 0, sz * a, sx * (a - t), 0, sz * a, sx * a, 0, sz * a, sx * a, 0, sz * (a - t));
+  p.push(-0.07, 0, 0, 0.07, 0, 0, 0, 0, -0.07, 0, 0, 0.07);
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(p, 3)); return g;
+})();
+const availMat = new THREE.LineBasicMaterial({ color: 0x111111 });
+const groundPick = new THREE.Mesh(new THREE.PlaneGeometry(N, N), pickMat);
+groundPick.rotation.x = -Math.PI / 2; groundPick.userData.ground = true; scene.add(groundPick);
+function rebuildSurfaces() {
+  scene.remove(surfaceGroup); surfaceGroup = new THREE.Group(); scene.add(surfaceGroup);
+  pickables = [groundPick];
+  for (let l = 1; l < LEVELS; l++) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    if (!hasFloor(x, y, l) && !(shaftOpen(x, y, l) || slotAt[idx(x, y, l)])) continue;
+    const m = new THREE.Mesh(pickGeo, pickMat);
+    m.position.set(wx(x), l * H + 0.005, wz(y));
+    m.userData = { x, y, l };
+    surfaceGroup.add(m); pickables.push(m);
+    if (slotFree(x, y, l)) {
+      const o = new THREE.LineSegments(availGeo, availMat);
+      o.position.set(wx(x), l * H + 0.015, wz(y));
+      surfaceGroup.add(o);
+    }
+  }
+}
+
+/* =====================================================================
+   AGENTS — age groups, instanced black figures
+   ===================================================================== */
+// Figure: torso, arms and head in one mesh; each leg separate so it can swing.
+// Faces local +z, feet at y = 0, about 0.45 tall at scale 1.
+function mergeGeos(list) {
+  const pos = [];
+  for (const g of list) { const n = g.toNonIndexed(); pos.push(...n.attributes.position.array); }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  return out;
+}
+const part = (w, h, d, x, y, z) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); return g; };
+const HIP = 0.2, LEG_X = 0.026;
+const torsoGeo = mergeGeos([
+  part(0.092, 0.15, 0.045, 0, HIP + 0.075, 0),                 // torso
+  part(0.024, 0.14, 0.03, -0.06, HIP + 0.078, 0),              // arms
+  part(0.024, 0.14, 0.03, 0.06, HIP + 0.078, 0),
+  part(0.026, 0.02, 0.026, 0, HIP + 0.16, 0),                  // neck
+  (() => { const g = new THREE.SphereGeometry(0.038, 12, 10); g.scale(0.92, 1.1, 1); g.translate(0, HIP + 0.212, 0); return g; })(),
+]);
+const legGeo = part(0.036, HIP, 0.04, 0, -HIP / 2, 0);         // origin at the hip
+const black = new THREE.MeshBasicMaterial({ color: 0x0c0c0c });
+let figures = [], figureCap = 0;
+function ensureFigures(n) {                    // no population limit: buffers double when full
+  if (n <= figureCap) return;
+  for (const f of figures) scene.remove(f);
+  figureCap = Math.max(256, figureCap * 2, n);
+  figures = [torsoGeo, legGeo, legGeo].map(g => {
+    const m = new THREE.InstancedMesh(g, black, figureCap);
+    m.castShadow = true; m.frustumCulled = false; scene.add(m); return m;
+  });
+}
+let agents = [];
+
+function pickAge() {
+  let r = rnd();
+  for (let i = 0; i < PARAMS.AGE_GROUPS.length; i++) if ((r -= PARAMS.AGE_GROUPS[i].share) <= 0) return i;
+  return PARAMS.AGE_GROUPS.length - 1;
+}
+function spawnAgent(atEdge) {
+  let x, y, tries = 0;
+  do {
+    x = (rnd() * N) | 0; y = (rnd() * N) | 0;
+    if (atEdge) { if (rnd() < 0.5) x = rnd() < 0.5 ? 0 : N - 1; else y = rnd() < 0.5 ? 0 : N - 1; }   // newcomers arrive from outside
+  } while (!(walkable(x, y, 0) && !archAt(x, y, 0)) && ++tries < 60);
+  return { x: x + 0.2 + rnd() * 0.6, z: y + 0.2 + rnd() * 0.6, l: 0, h: 0, vx: 0, vz: 0,
+           age: pickAge(), target: null, last: null, state: "wander", timer: rnd() * 2, wa: rnd() * 6.28,
+           yaw: rnd() * 6.28, phase: rnd() * 6.28, stride: 0, wanderer: rnd() < PARAMS.WANDERER_SHARE };
+}
+function setAgentCount(n) {
+  while (agents.length < n) agents.push(spawnAgent(programs.length > 0));
+  agents.length = Math.min(agents.length, n);
+  ensureFigures(agents.length);
+  for (const f of figures) f.count = agents.length;
+}
+
+/* =====================================================================
+   ATTRACTION CALCULATIONS — who goes where next
+   ===================================================================== */
+function pickTarget(a, node) {
+  if (a.wanderer) { a.target = null; a.state = "wander"; a.timer = rrange(PARAMS.WANDER_TIME[0], PARAMS.WANDER_TIME[1]); return; }
+  let total = PARAMS.WANDER_CHOICE_WEIGHT;
+  const w = [];
+  for (const s of programs) {
+    const dist = s.field[node];
+    let v = 0;
+    if (dist >= 0) {
+      v = PARAMS.ATTRACTION[a.age][s.prog] / (1 + PARAMS.DISTANCE_FALLOFF * dist);
+      if (s.stage >= 4) v *= PARAMS.ARCH_ATTRACTION_FACTOR;
+      v *= 1 + PARAMS.ELEVATED_BOOST * s.l;
+      if (s === a.last) v *= 0.25;                 // come and go rather than hover
+    }
+    w.push(v); total += v;
+  }
+  let r = rnd() * total;
+  for (let i = 0; i < w.length; i++) if ((r -= w[i]) <= 0 && w[i] > 0) {
+    a.target = programs[i]; a.state = "travel"; a.timer = PARAMS.TRAVEL_PATIENCE; return;
+  }
+  a.target = null; a.state = "wander"; a.timer = rrange(PARAMS.WANDER_TIME[0], PARAMS.WANDER_TIME[1]);
+}
+
+/* =====================================================================
+   AGENT BEHAVIOUR — flow toward program, separation, alignment,
+   cohesion, wander; walls and level edges stop movement
+   ===================================================================== */
+function relocate(a) {            // the cell under the agent turned solid
+  const cx = Math.floor(a.x), cy = Math.floor(a.z);
+  for (let d = 0; d < 4; d++) {
+    const nx = cx + DIRS[d][0], ny = cy + DIRS[d][1];
+    if (walkable(nx, ny, a.l) && !(archAt(nx, ny, a.l) || {}).connector) { a.x = nx + 0.5; a.z = ny + 0.5; return; }
+  }
+  Object.assign(a, spawnAgent(), { age: a.age });
+}
+function enterNode(a, node, from, d) {
+  // remember which sides of a programmed cell people actually use
+  const so = slotAt[from]; if (so && so.cross) so.cross[d]++;
+  a.l = (node / NN) | 0;
+  const s = slotAt[node];
+  if (s && s.cross) s.cross[opp(d)]++;
+  if (s && !s.aux && s.stage < 4) { s.activity += PARAMS.ENTER_BONUS; s.entries++; }
+}
+const buckets = Array.from({ length: N * N * LEVELS }, () => []);
+function updateAgents(dt) {
+  const P = PARAMS, n = agents.length;
+  for (const b of buckets) b.length = 0;
+  for (const a of agents) {
+    const bx = Math.min(N - 1, Math.max(0, Math.floor(a.x))), by = Math.min(N - 1, Math.max(0, Math.floor(a.z)));
+    buckets[idx(bx, by, a.l)].push(a);
+  }
+  for (let i = 0; i < n; i++) {
+    const a = agents[i];
+    let cx = Math.floor(a.x), cy = Math.floor(a.z);
+    if (!walkable(cx, cy, a.l)) { relocate(a); cx = Math.floor(a.x); cy = Math.floor(a.z); }
+    const node = idx(cx, cy, a.l);
+    const group = P.AGE_GROUPS[a.age];
+
+    // --- decide --------------------------------------------------------------
+    a.timer -= dt;
+    if (a.state === "travel") {
+      const f = a.target.field[node];
+      if (f < 0 || a.timer <= 0) pickTarget(a, node);
+      else if (f === 0) { a.state = "dwell"; a.timer = rrange(P.DWELL_TIME[0], P.DWELL_TIME[1]); }
+    } else if (a.timer <= 0) { a.last = a.target; pickTarget(a, node); }
+
+    // --- steer ---------------------------------------------------------------
+    let fx = 0, fz = 0, pace = 1;
+    if (a.state === "travel") {
+      const f = a.target.field; let best = f[node], bx = -1, by = 0;
+      for (let d = 0; d < 4; d++) {
+        const j = step(cx, cy, a.l, d);
+        if (j >= 0 && f[j] >= 0 && f[j] < best) { best = f[j]; bx = j % N; by = ((j / N) | 0) % N; }
+      }
+      if (bx >= 0) { fx = bx + 0.5 - a.x; fz = by + 0.5 - a.z; const m = Math.hypot(fx, fz) || 1; fx /= m; fz /= m; }
+    } else if (a.state === "dwell") {
+      pace = 0.35;
+      fx = (cx + 0.5 - a.x) * 1.2; fz = (cy + 0.5 - a.z) * 1.2;   // linger inside the cell
+    } else pace = 0.7;
+
+    a.wa += (rnd() - 0.5) * dt * 5;
+    let sx = 0, sz = 0, ax = 0, az = 0, px = 0, pz = 0, cnt = 0;
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+     if (!inGrid(cx + ox, cy + oy)) continue;
+     const cell = buckets[idx(cx + ox, cy + oy, a.l)];
+     for (let q = 0; q < cell.length; q++) {
+      const b = cell[q];
+      if (b === a) continue;
+      const dx = a.x - b.x, dz = a.z - b.z, d2 = dx * dx + dz * dz;
+      if (d2 > P.NEIGHBOR_RADIUS * P.NEIGHBOR_RADIUS) continue;
+      const dd = Math.sqrt(d2) || 0.001;
+      if (dd < P.SEPARATION_RADIUS) { const k2 = (1 - dd / P.SEPARATION_RADIUS) / dd; sx += dx * k2; sz += dz * k2; }
+      ax += b.vx; az += b.vz; px += b.x; pz += b.z; cnt++;
+     }
+    }
+    if (cnt) { ax /= cnt; az /= cnt; px = px / cnt - a.x; pz = pz / cnt - a.z; }
+    const sp = group.speed * pace;
+    const onStair = archAt(cx, cy, a.l); if (onStair && onStair.connector) { sx *= 0.25; sz *= 0.25; }   // people squeeze past each other on a flight
+    let dvx = sp * (fx * P.W_FLOW + Math.cos(a.wa) * P.W_WANDER + sx * P.W_SEPARATION) + ax * P.W_ALIGN + px * P.W_COHESION;
+    let dvz = sp * (fz * P.W_FLOW + Math.sin(a.wa) * P.W_WANDER + sz * P.W_SEPARATION) + az * P.W_ALIGN + pz * P.W_COHESION;
+    const m = Math.hypot(dvx, dvz);
+    if (m > sp) { dvx *= sp / m; dvz *= sp / m; }
+    const k = Math.min(1, dt * 6);
+    a.vx += (dvx - a.vx) * k; a.vz += (dvz - a.vz) * k;
+
+    // --- move, one axis at a time, respecting the walkable graph ----------------
+    let nx = a.x + a.vx * dt, ncx = Math.floor(nx);
+    if (ncx !== cx) {
+      const d = ncx > cx ? 0 : 2, j = step(cx, cy, a.l, d);
+      if (j < 0) { nx = a.x; a.vx *= -0.3; a.wa += 1.5; } else { enterNode(a, j, idx(cx, cy, a.l), d); cx = ncx; }
+    }
+    a.x = nx;
+    let nz = a.z + a.vz * dt, ncy = Math.floor(nz);
+    if (ncy !== cy) {
+      const d = ncy > cy ? 1 : 3, j = step(cx, cy, a.l, d);
+      if (j < 0) { nz = a.z; a.vz *= -0.3; a.wa += 1.5; } else { enterNode(a, j, idx(cx, cy, a.l), d); cy = ncy; }
+    }
+    a.z = nz;
+
+    // --- height: stairs and ramps lift the agent gradually ---------------------
+    let h = a.l * H;
+    const arch = archAt(cx, cy, a.l);
+    if (arch && arch.connector) {
+      const u = a.x - cx, v = a.z - cy;
+      h += H * Math.min(1, Math.max(0, [u, v, 1 - u, 1 - v][arch.dir]));
+      const pull = Math.min(1, dt * 10), hw = Math.max(0, arch.half - 0.06);
+      if (arch.dir % 2 === 0) a.z += (cy + 0.5 + Math.max(-hw, Math.min(hw, v - 0.5)) - a.z) * pull;
+      else a.x += (cx + 0.5 + Math.max(-hw, Math.min(hw, u - 0.5)) - a.x) * pull;
+    }
+    a.h += (h - a.h) * Math.min(1, dt * 14);
+
+    // --- gait: face the way you walk, legs swing with speed ---------------------
+    const v = Math.hypot(a.vx, a.vz);
+    if (v > 0.05) {
+      let dy = Math.atan2(a.vx, a.vz) - a.yaw;
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      a.yaw += dy * Math.min(1, dt * 8);
+    }
+    a.phase += v * dt * 11;
+    a.stride = Math.min(0.6, v * 0.55);
+  }
+}
+const _m = new THREE.Matrix4(), _leg = new THREE.Matrix4(), _out = new THREE.Matrix4();
+const _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
+function drawAgents() {
+  for (const f of figures) f.visible = show.agents;
+  for (let i = 0; i < agents.length; i++) {
+    const a = agents[i], sc = PARAMS.AGE_GROUPS[a.age].scale;
+    _p.set(a.x - N / 2, a.h, a.z - N / 2); _s.set(sc, sc, sc);
+    _q.setFromAxisAngle(_up, a.yaw);
+    _m.compose(_p, _q, _s);
+    figures[0].setMatrixAt(i, _m);
+    const swing = Math.sin(a.phase) * a.stride;
+    for (let k = 0; k < 2; k++) {
+      _leg.makeRotationX(k ? swing : -swing).setPosition(k ? LEG_X : -LEG_X, HIP, 0);
+      _out.multiplyMatrices(_m, _leg);
+      figures[1 + k].setMatrixAt(i, _out);
+    }
+  }
+  for (const f of figures) f.instanceMatrix.needsUpdate = true;
+}
+
+/* =====================================================================
+   ACTIVITY ACCUMULATION + HOTSPOT PROGRESSION
+   ===================================================================== */
+function updateActivity(dt) {
+  const P = PARAMS, TH = P.STAGE_THRESHOLDS, R2 = P.NEAR_RADIUS * P.NEAR_RADIUS;
+  const ready = [], wants = [];
+  for (const s of programs) {
+    if (s.stage >= 4) continue;
+    let inside = 0, near = 0;
+    for (const a of agents) {
+      if (a.l !== s.l) continue;
+      const dx = a.x - (s.x + 0.5), dz = a.z - (s.y + 0.5);
+      if (Math.abs(dx) < 0.5 && Math.abs(dz) < 0.5) inside++;
+      else if (dx * dx + dz * dz < R2) near++;
+    }
+    let gain = inside * P.RATE_INSIDE + near * P.RATE_NEAR;
+    if (inside + near >= P.DENSITY_COUNT) gain += P.RATE_DENSITY;
+    s.activity = Math.max(0, s.activity + (gain - P.FADE_RATE) * dt);
+    let st = 0; while (st < 4 && s.activity >= TH[st]) st++;
+    // a flight waits until it has a floor at its foot and somewhere to arrive
+    if (st >= 4 && !hasFloor(s.x, s.y, s.l) && !nextFlightFits(s)) { st = 3; s.activity = TH[3] - 0.01; }
+    s.stage = st;
+    if (st >= 4) ready.push(s);
+  }
+  for (const s of ready) generateArchitecture(s);   // the rules pick the form
+}
+
+/* =====================================================================
+   SIMULATION LOOP
+   ===================================================================== */
+let camSnap = null;
+let playing = false, simTime = 0, speed = PARAMS.SIM_SPEED;
+function simStep(dt) {
+  simTime += dt;
+  updateAgents(dt);
+  updateActivity(dt);
+}
+function resetSim(keepAgents) {
+  for (const s of slots) {
+    if (s.marker) scene.remove(s.marker);
+    if (s.hot) scene.remove(s.hot);
+    if (s.archGroup) scene.remove(s.archGroup);
+  }
+  slotAt = new Array(N * N * LEVELS).fill(null); slots = []; programs = []; rising.length = 0;
+  if (keepAgents) {
+    for (const a of agents) { if (a.l > 0) { a.l = 0; a.h = 0; } a.target = a.last = null; a.state = "wander"; a.timer = 0; }
+  } else {
+    rngState = PARAMS.SEED; simTime = 0; agents = [];
+    setAgentCount(PARAMS.AGENT_COUNT);
+  }
+  recomputeNav();
+}
+let lastT = performance.now(), statT = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  const real = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  if (playing) {
+    let left = real * speed;
+    while (left > 1e-4) { const d = Math.min(0.033, left); simStep(d); left -= d; }
+  }
+  if (camSnap !== null && !pointers.size) {
+    cam.az += (camSnap - cam.az) * Math.min(1, real * 9);
+    if (Math.abs(camSnap - cam.az) < 0.001) { cam.az = camSnap; camSnap = null; }
+    updateCamera();
+  }
+  // readout + framing follow the field as it climbs
+  let tallest = 0;
+  for (const q of slots) if (q.arch) tallest = Math.max(tallest, q.l + 1);
+  $("pop").textContent = agents.length;
+  const goal = tallest * H;
+  if (Math.abs(goal - viewTop) > 0.002) { viewTop += (goal - viewTop) * Math.min(1, real * 2); updateCamera(); }
+  for (let i = rising.length - 1; i >= 0; i--) {     // new forms rise out of the hotspot
+    const g = rising[i]; g.scale.y = Math.min(1, g.scale.y + real * 2.2);
+    if (g.scale.y >= 1) rising.splice(i, 1);
+  }
+  for (const s of programs) updateHotspotVisual(s);
+  gridLines.visible = show.grid;
+  drawAgents();
+  renderer.render(scene, camera);
+}
+
+/* =====================================================================
+   USER INTERFACE
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+let selected = 0;
+PARAMS.PROGRAMS.forEach((p, i) => {
+  const b = document.createElement("button");
+  b.style.setProperty("--c", "#" + p.color.toString(16).padStart(6, "0"));
+  b.innerHTML = "<i></i>" + p.name;
+  b.setAttribute("aria-pressed", i === 0);
+  b.onclick = () => { selected = i; [...$("programs").children].forEach((c, k) => c.setAttribute("aria-pressed", k === i)); };
+  $("programs").appendChild(b);
+});
+$("play").onclick = () => { playing = !playing; $("play").textContent = playing ? "Pause" : "Play"; };
+$("reset").onclick = () => resetSim(false);
+
+// --- start screen -------------------------------------------------------------
+// The start screen uses the game's own figure: the same 3D model, seen from the same
+// isometric angle, rendered once to an image and reused at each age group's scale.
+const FIG = (() => {
+  const W = 0.162, Hh = 0.27, feet = 0.225;              // half-extents of the frame; height of its centre above the feet
+  const r = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  r.setSize(288, 480, false);
+  const sc = new THREE.Scene(), c = new THREE.OrthographicCamera(-W, W, Hh, -Hh, 0.1, 20);
+  const ce = Math.cos(CAM_HOME.el);
+  c.position.set(5 * ce * Math.sin(CAM_HOME.az), feet + 5 * Math.sin(CAM_HOME.el), 5 * ce * Math.cos(CAM_HOME.az));
+  c.lookAt(0, feet, 0);
+  const g = new THREE.Group(); g.rotation.y = Math.PI / 4 + 0.5;      // walking toward the viewer, slightly turned
+  g.add(new THREE.Mesh(torsoGeo, black));
+  for (const k of [-1, 1]) { const leg = new THREE.Mesh(legGeo, black); leg.position.set(k * LEG_X, HIP, 0); leg.rotation.x = k * 0.32; g.add(leg); }
+  sc.add(g); r.render(sc, c);
+  const url = r.domElement.toDataURL("image/png");
+  r.dispose();
+  return { url, w: 2 * W, h: 2 * Hh, up: Hh + feet * ce };   // up: frame height above the feet
+})();
+// place one figure with its feet at (x, y); u = drawing units per model unit
+function figureSVG(x, y, u) {
+  return `<image href="${FIG.url}" x="${(x - FIG.w * u / 2).toFixed(2)}" y="${(y - FIG.up * u).toFixed(2)}" width="${(FIG.w * u).toFixed(2)}" height="${(FIG.h * u).toFixed(2)}"/>`;
+}
+// wordmark: each letter is built from the game's own parts (walls, slabs, columns),
+// drawn as an oblique projection in the four program colours, with a few occupants on top
+(function buildWordmark() {
+  const L = [0, 0, 1, 6], R4 = [3, 0, 1, 6], TOP = [0, 0, 4, 1], BOT = [0, 5, 4, 1];
+  const letters = [
+    { w: 4, bars: [L, R4, TOP, BOT] },                                   // O  frame
+    { w: 4, bars: [L, TOP, BOT] },                                       // C  wall + two slabs
+    { w: 4, bars: [L, TOP, BOT] },                                       // C
+    { w: 4, bars: [L, R4, BOT] },                                        // U  pair of walls
+    { w: 4, bars: [L, TOP, [0, 3, 4, 1], [3, 0, 1, 4]] },                // P  wall + platform
+    { w: 1, bars: [[0, 0, 1, 6]] },                                      // I  column
+    { w: 4, bars: [L, TOP, [0, 2.5, 3, 1], BOT] },                       // E  stacked slabs
+    { w: 4, bars: [L, [0, 0, 3, 1], [0, 5, 3, 1], [3, 1, 1, 4]] },       // D
+  ];
+  const d = 0.55, gap = 1.25;
+  const mix = (hex, t, to) => "#" + [16, 8, 0].map(sh => Math.round(((hex >> sh) & 255) * (1 - t) + to * t).toString(16).padStart(2, "0")).join("");
+  let x0 = 0, out = "";
+  letters.forEach((lt, i) => {
+    const c = PARAMS.PROGRAMS[i % 4].color, front = mix(c, 0, 0), top = mix(c, 0.38, 255), side = mix(c, 0.3, 0);
+    const P = (a, b) => (x0 + a).toFixed(2) + "," + b.toFixed(2);
+    let sides = "", tops = "", fronts = "";
+    for (const [x, y, w, h] of lt.bars) {
+      sides += `<polygon fill="${side}" points="${P(x + w, y)} ${P(x + w + d, y - d)} ${P(x + w + d, y + h - d)} ${P(x + w, y + h)}"/>`;
+      tops += `<polygon fill="${top}" points="${P(x, y)} ${P(x + w, y)} ${P(x + w + d, y - d)} ${P(x + d, y - d)}"/>`;
+      fronts += `<rect fill="${front}" x="${(x0 + x).toFixed(2)}" y="${y}" width="${w}" height="${h}"/>`;
+    }
+    out += sides + tops + fronts;
+    lt.x = x0; x0 += lt.w + gap;
+  });
+  const W = x0 - gap + d;
+  // occupants standing on and inside the letters
+  const S = PARAMS.AGE_GROUPS.map(g => g.scale * 5.2);
+  out += figureSVG(letters[0].x + 2.4, -0.28, S[3]) + figureSVG(letters[2].x + 2.0, 4.72, S[0]) + figureSVG(letters[2].x + 3.1, 4.72, S[2]) +
+         figureSVG(letters[4].x + 1.6, -0.28, S[2]) + figureSVG(letters[6].x + 2.2, 2.3, S[0]) + figureSVG(letters[7].x + 1.4, -0.28, S[1]);
+  $("introTitle").innerHTML = `<svg viewBox="-0.1 -3.4 ${(W + 0.2).toFixed(2)} 9.5" role="img" aria-hidden="true">${out}</svg>`;
+})();
+// size shows age
+PARAMS.AGE_GROUPS.forEach((gp, i) => {
+  const u = 150 * gp.scale, w = FIG.w * u, h = (FIG.up + 0.045) * u;   // crop just below the feet so all four share a baseline
+  $("ages").insertAdjacentHTML("beforeend",
+    `<svg width="${w.toFixed(0)}" height="${h.toFixed(0)}" viewBox="${(-w / 2).toFixed(1)} ${(-FIG.up * u).toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" role="img" aria-label="Figure, age ${gp.label}">${figureSVG(0, 0, u)}</svg>`);
+  $("ageLabels").insertAdjacentHTML("beforeend", `<div><b>${gp.label}</b></div>`);
+});
+let wasPlaying = true;
+$("start").onclick = () => { $("intro").hidden = true; playing = wasPlaying; $("play").textContent = playing ? "Pause" : "Play"; };
+$("about").onclick = () => { wasPlaying = playing; playing = false; $("intro").hidden = false; $("start").textContent = "Continue"; $("start").focus(); };
+$("camReset").onclick = () => { camSnap = null; Object.assign(cam, CAM_HOME); updateCamera(); };
+
+// --- hover highlight + click to place; drag to orbit; wheel / pinch to zoom ---
+const hover = new THREE.Group();
+const hoverFill = new THREE.Mesh(markerGeo, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.4, depthWrite: false }));
+const hoverLine = new THREE.LineSegments(markerEdge, new THREE.LineBasicMaterial({ color: 0x111111 }));
+hover.add(hoverFill, hoverLine); hover.visible = false; scene.add(hover);
+
+const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function pickCell(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = raycaster.intersectObjects(pickables, false)[0];
+  if (!hit) return null;
+  let c;
+  if (hit.object.userData.ground) {
+    c = { x: Math.floor(hit.point.x + N / 2), y: Math.floor(hit.point.z + N / 2), l: 0 };
+    if (!inGrid(c.x, c.y)) return null;
+  } else c = hit.object.userData;
+  return slotFree(c.x, c.y, c.l) ? c : null;
+}
+const el = renderer.domElement, pointers = new Map();
+let dragged = false, downX = 0, downY = 0, pinch = 0;
+el.addEventListener("pointerdown", e => {
+  camSnap = null;
+  el.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 1) { dragged = false; downX = e.clientX; downY = e.clientY; }
+  else { dragged = true; const p = [...pointers.values()]; pinch = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); }
+});
+el.addEventListener("pointermove", e => {
+  const p = pointers.get(e.pointerId);
+  if (!p) {                                     // plain hover
+    const c = pickCell(e);
+    hover.visible = !!c;
+    if (c) { hover.position.set(wx(c.x), c.l * H + 0.02, wz(c.y)); hoverFill.material.color.setHex(PARAMS.PROGRAMS[selected].color); }
+    return;
+  }
+  if (pointers.size === 2) {
+    p.x = e.clientX; p.y = e.clientY;
+    const q = [...pointers.values()], d = Math.hypot(q[0].x - q[1].x, q[0].y - q[1].y);
+    if (pinch) cam.zoom = Math.min(4, Math.max(0.5, cam.zoom * d / pinch));
+    pinch = d; updateCamera(); return;
+  }
+  if (!dragged && Math.hypot(e.clientX - downX, e.clientY - downY) > 5) { dragged = true; hover.visible = false; }
+  if (dragged) {
+    cam.az -= (e.clientX - p.x) * 0.006;       // turn only; the isometric tilt never changes
+    updateCamera();
+  }
+  p.x = e.clientX; p.y = e.clientY;
+});
+function release(e) {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId); pinch = 0;
+  if (dragged && !pointers.size)                // settle on the nearest true isometric corner
+    camSnap = Math.round((cam.az - Math.PI / 4) / (Math.PI / 2)) * (Math.PI / 2) + Math.PI / 4;
+  if (!dragged && e.type === "pointerup") {
+    const c = pickCell(e);
+    if (c) { placeProgram(c.x, c.y, c.l, selected); hover.visible = false; }
+  }
+}
+el.addEventListener("pointerup", release);
+el.addEventListener("pointercancel", release);
+el.addEventListener("pointerleave", () => { hover.visible = false; });
+el.addEventListener("wheel", e => {
+  e.preventDefault();
+  cam.zoom = Math.min(4, Math.max(0.5, cam.zoom * Math.exp(-e.deltaY * 0.0012)));
+  updateCamera();
+}, { passive: false });
+
+/* =====================================================================
+   START
+   ===================================================================== */
+resize();
+resetSim(false);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
